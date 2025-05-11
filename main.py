@@ -91,6 +91,17 @@ class PlusState(State):
     def check_self(self, char):
         return self.checking_state.check_self(char) # Implement
 
+class ClassState(State):
+
+    def __init__(self, allowed: set[str], is_negated: bool = False):
+        super().__init__()
+        self.allowed = allowed
+        self.is_negated = is_negated
+
+    def check_self(self, char: str) -> bool:
+        if self.is_negated:
+            return char not in self.allowed
+        return char in self.allowed
 
 class RegexFSM:
 
@@ -106,7 +117,10 @@ class RegexFSM:
             if char in "*+":
                 raise ValueError(f"Regex cannot start with '{char}'")
 
-            if char == "." or char.isascii() and char not in "*+":
+            if char == "[":
+                i = self.parse_char_class(regex_expr, i)
+
+            elif char == "." or char.isascii() and char not in "*+":
                 node = DotState() if char == "." else AsciiState(char)
                 self.states[-1].next_states.append(node)
                 self.states.append(node)
@@ -127,6 +141,36 @@ class RegexFSM:
         self.states[-1].next_states.append(self.exit)
 
 
+    def parse_char_class(self, regex_expr: str, i: int) -> int:
+        i += 1
+        allowed = set()
+        is_negated = False
+
+        if i < len(regex_expr) and regex_expr[i] == "^":
+            is_negated = True
+            i += 1
+
+        while i < len(regex_expr) and regex_expr[i] != "]":
+            if (i + 2 < len(regex_expr) and regex_expr[i + 1] == "-"):
+                start = regex_expr[i]
+                end = regex_expr[i + 2]
+                allowed.update(chr(c) for c in range(ord(start), ord(end) + 1))
+                i += 3
+            else:
+                allowed.add(regex_expr[i])
+                i += 1
+
+        if i == len(regex_expr) or regex_expr[i] != "]":
+            raise ValueError("Unclosed character class")
+
+        i += 1
+
+        node = ClassState(allowed, is_negated)
+        self.states[-1].next_states.append(node)
+        self.states.append(node)
+
+        return i
+
     def check_string(self, s: str) -> bool:
         def explore(state: State, pos: int) -> bool:
             if isinstance(state, TerminationState):
@@ -146,7 +190,6 @@ class RegexFSM:
                         return True
 
             return accepted
-
 
         for first in self.entry.next_states:
             if explore(first, 0):
